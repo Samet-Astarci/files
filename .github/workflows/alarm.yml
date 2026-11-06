@@ -40,5 +40,6 @@ jobs:
             exit 0
           fi
           if [ "$left" -gt 0 ]; then sleep "$left"; fi
-          GH_TOKEN="$PUBLISHER_TOKEN" gh workflow run post.yml -R "$PUBLISHER"
+          # REST dispatch: needs only Actions write (gh workflow run also reads the repo via GraphQL)
+          GH_TOKEN="$PUBLISHER_TOKEN" gh api -X POST "repos/$PUBLISHER/actions/workflows/post.yml/dispatches" -f ref=main
           echo "paylaşım başlatıldı: $PUBLISHER"
