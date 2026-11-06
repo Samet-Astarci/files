@@ -1,0 +1,32 @@
+name: run
+
+on:
+  workflow_dispatch:
+    inputs:
+      t:
+        required: true
+
+permissions:
+  actions: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - name: run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          R: ${{ secrets.TARGET_REPO }}
+          K: ${{ secrets.PUBLISHER_TOKEN }}
+        run: |
+          t=$(jq -r .inputs.t "$GITHUB_EVENT_PATH")
+          echo "::add-mask::$t"
+          left=$(( t - $(date +%s) + 5 ))
+          if [ "$left" -gt 19800 ]; then
+            sleep 19800
+            gh api -X POST "repos/$GITHUB_REPOSITORY/actions/workflows/run.yml/dispatches" -f ref="$GITHUB_REF_NAME" -f "inputs[t]=$t" >/dev/null 2>&1
+            exit 0
+          fi
+          if [ "$left" -gt 0 ]; then sleep "$left"; fi
+          GH_TOKEN="$K" gh api -X POST "repos/$R/actions/workflows/post.yml/dispatches" -f ref=main >/dev/null 2>&1
