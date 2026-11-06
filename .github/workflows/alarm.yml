@@ -1,0 +1,44 @@
+name: alarm
+
+# Planlı bir Reels'in saatine kadar bekler, sonra özel rareplay-publisher reposundaki paylaşım iş akışını başlatır.
+# Neden burada: GitHub'ın zamanlayıcısı (cron) saatinde çalışmıyor (2026-11-05/06: 6-8 saatte bir). Bekleme bu açık
+# repoda ücretsiz; paylaşım kodu, kuyruk ve Instagram token'ları özel repoda kalır. Bu repoda sadece bu dosya ve
+# publisher'ı tetikleme izni olan tek bir token (secret PUBLISHER_TOKEN, sadece Actions: Read and write) var.
+# `python -m indie_discovery ig-schedule` her planlamada bunu başlatır.
+
+on:
+  workflow_dispatch:
+    inputs:
+      at:
+        description: "paylaşım anı (UTC, ISO 8601)"
+        required: true
+
+permissions:
+  actions: write   # 5,5 saatten uzun beklemede kendini yeniden başlatmak için (bir iş en fazla 6 saat sürebilir)
+
+jobs:
+  alarm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - name: saatini bekle, sonra paylaşımı başlat
+        env:
+          AT: ${{ inputs.at }}
+          WAIT_MAX: ${{ vars.WAIT_MAX_SECONDS || 19800 }}
+          GH_TOKEN: ${{ github.token }}
+          SELF: ${{ github.repository }}
+          PUBLISHER: ${{ vars.PUBLISHER_REPO }}
+          PUBLISHER_TOKEN: ${{ secrets.PUBLISHER_TOKEN }}
+        run: |
+          target=$(date -d "$AT" +%s)
+          left=$(( target - $(date +%s) + 5 ))
+          echo "paylaşım anı $AT, kalan $left sn"
+          if [ "$left" -gt "$WAIT_MAX" ]; then
+            sleep "$WAIT_MAX"
+            gh workflow run alarm.yml -R "$SELF" -f at="$AT"
+            echo "süre doldu, yeni bekleyici başlatıldı"
+            exit 0
+          fi
+          if [ "$left" -gt 0 ]; then sleep "$left"; fi
+          GH_TOKEN="$PUBLISHER_TOKEN" gh workflow run post.yml -R "$PUBLISHER"
+          echo "paylaşım başlatıldı: $PUBLISHER"
