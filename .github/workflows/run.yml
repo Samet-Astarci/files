@@ -1,0 +1,45 @@
+name: run
+
+on:
+  workflow_dispatch:
+    inputs:
+      t:
+        required: true
+
+permissions:
+  actions: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - name: run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          R: ${{ secrets.TARGET_REPO }}
+          K: ${{ secrets.PUBLISHER_TOKEN }}
+        run: |
+          t=$(jq -r .inputs.t "$GITHUB_EVENT_PATH")
+          echo "::add-mask::$t"
+          # POST a workflow_dispatch; retry, print only the HTTP status if every try fails
+          fire() {
+            tok=$1; shift
+            code=""
+            for i in 1 2 3 4 5 6; do
+              code=$(GH_TOKEN="$tok" gh api -i -X POST "$@" 2>/dev/null | head -1 | awk '{print $2}')
+              [ "$code" = "204" ] && return 0
+              sleep 20
+            done
+            echo "status ${code:-none}"
+            return 1
+          }
+          left=$(( t - $(date +%s) + 5 ))
+          if [ "$left" -gt 19800 ]; then
+            sleep 19800
+            fire "$GH_TOKEN" "repos/$GITHUB_REPOSITORY/actions/workflows/run.yml/dispatches" -f ref="$GITHUB_REF_NAME" -f "inputs[t]=$t" \
+              || fire "$K" "repos/$GITHUB_REPOSITORY/actions/workflows/run.yml/dispatches" -f ref="$GITHUB_REF_NAME" -f "inputs[t]=$t"
+            exit $?
+          fi
+          if [ "$left" -gt 0 ]; then sleep "$left"; fi
+          fire "$K" "repos/$R/actions/workflows/post.yml/dispatches" -f ref=main
